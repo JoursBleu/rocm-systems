@@ -28,7 +28,7 @@ namespace amd::smi {
 
 AMDSmiLibraryLoader::AMDSmiLibraryLoader() : libHandler_(nullptr) {}
 
-amdsmi_status_t AMDSmiLibraryLoader::load(const char* filename) {
+amdsmi_status_t AMDSmiLibraryLoader::load(const char* filename, bool log_errors) {
   if (filename == nullptr) {
     return AMDSMI_STATUS_FAIL_LOAD_MODULE;
   }
@@ -43,8 +43,10 @@ amdsmi_status_t AMDSmiLibraryLoader::load(const char* filename) {
   if (isLibOpen == nullptr) {
     libHandler_ = dlopen(filename, RTLD_LAZY);
     if (!libHandler_) {
-      char* error = dlerror();
-      std::cerr << "Fail to open " << filename << ": " << error << std::endl;
+      if (log_errors) {
+        char* error = dlerror();
+        std::cerr << "Fail to open " << filename << ": " << error << std::endl;
+      }
       return AMDSMI_STATUS_FAIL_LOAD_MODULE;
     }
   }

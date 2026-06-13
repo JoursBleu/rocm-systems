@@ -35,10 +35,10 @@ class AMDSmiLibraryLoader {
  public:
   AMDSmiLibraryLoader();
 
-  amdsmi_status_t load(const char* filename);
+  amdsmi_status_t load(const char* filename, bool log_errors = true);
 
   template <typename T>
-  amdsmi_status_t load_symbol(T* func_handler, const char* func_name);
+  amdsmi_status_t load_symbol(T* func_handler, const char* func_name, bool log_errors = true);
 
   amdsmi_status_t unload();
 
@@ -51,7 +51,8 @@ class AMDSmiLibraryLoader {
 };
 
 template <typename T>
-amdsmi_status_t AMDSmiLibraryLoader::load_symbol(T* func_handler, const char* func_name) {
+amdsmi_status_t AMDSmiLibraryLoader::load_symbol(T* func_handler, const char* func_name,
+                                                 bool log_errors) {
   if (!libHandler_) {
     return AMDSMI_STATUS_FAIL_LOAD_MODULE;
   }
@@ -64,9 +65,11 @@ amdsmi_status_t AMDSmiLibraryLoader::load_symbol(T* func_handler, const char* fu
 
   *reinterpret_cast<void**>(func_handler) = dlsym(libHandler_, func_name);
   if (*func_handler == nullptr) {
-    char* error = dlerror();
-    std::cerr << "AMDSmiLibraryLoader: Fail to load the symbol " << func_name << ": " << error
-              << std::endl;
+    if (log_errors) {
+      char* error = dlerror();
+      std::cerr << "AMDSmiLibraryLoader: Fail to load the symbol " << func_name << ": " << error
+                << std::endl;
+    }
     return AMDSMI_STATUS_FAIL_LOAD_SYMBOL;
   }
 

@@ -20,14 +20,17 @@
 # CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 
 import ctypes
+import importlib.util
 import json
 import os
 import shutil
 import stat
 import sys
 import tempfile
-
 import unittest
+from pathlib import Path
+from types import ModuleType, SimpleNamespace
+from unittest.mock import Mock, patch
 
 import common
 import runcmd
@@ -39,6 +42,78 @@ from common import amdsmi
 # It must exist at module scope so setUpClass/setUp can reference it before
 # __main__ runs (e.g. when loaded by an external test runner).
 verbose = common.VERBOSITY_NORMAL
+
+
+class TestAmdSmiCliWslDetection(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        class FakeInitFlags:
+            INIT_ALL_PROCESSORS = 0
+            INIT_AMD_GPUS = 1
+            INIT_AMD_CPUS = 2
+            INIT_AMD_NICS = 4
+
+        class FakeLibraryException(Exception):
+            err_code = 0
+
+        fake_wrapper = SimpleNamespace(AMDSMI_STATUS_NOT_INIT=1, AMDSMI_STATUS_DRIVER_NOT_LOADED=2)
+        fake_interface = SimpleNamespace(
+            AmdSmiInitFlags=FakeInitFlags,
+            AmdSmiLibraryException=FakeLibraryException,
+            AmdSmiParameterException=FakeLibraryException,
+            amdsmi_wrapper=fake_wrapper,
+            amdsmi_init=lambda _flags: None,
+            amdsmi_shut_down=lambda: None,
+        )
+        fake_amdsmi = ModuleType("amdsmi")
+        fake_amdsmi.amdsmi_interface = fake_interface
+        fake_amdsmi.amdsmi_exception = SimpleNamespace(AmdSmiLibraryException=FakeLibraryException)
+
+        module_path = Path(__file__).resolve().parents[2] / "amdsmi_cli" / "amdsmi_init.py"
+        spec = importlib.util.spec_from_file_location("_amdsmi_init_wsl_test", module_path)
+        if spec is None or spec.loader is None:
+            raise RuntimeError(f"Unable to load {module_path}")
+        module = importlib.util.module_from_spec(spec)
+        with (
+            patch.dict(sys.modules, {"amdsmi": fake_amdsmi}),
+            patch("atexit.register"),
+            patch("signal.signal"),
+        ):
+            spec.loader.exec_module(module)
+        cls.amdsmi_init = module
+
+    def check_wsl2_gpu(self, proc_version, dxg_exists, kfd_exists):
+        proc_path = Mock()
+        proc_path.read_text.return_value = proc_version
+        dxg_path = Mock()
+        dxg_path.exists.return_value = dxg_exists
+        kfd_path = Mock()
+        kfd_path.exists.return_value = kfd_exists
+        paths = {"/proc/version": proc_path, "/dev/dxg": dxg_path, "/dev/kfd": kfd_path}
+        with patch.object(self.amdsmi_init, "Path", side_effect=paths.__getitem__):
+            return self.amdsmi_init.check_wsl2_gpu()
+
+    def test_check_wsl2_gpu_detection_matrix(self):
+        cases = (
+            ("Linux microsoft-standard-WSL2", True, False, True),
+            ("Linux WSL2 kernel", True, False, True),
+            ("Linux version 6.8.0", True, False, False),
+            ("Linux microsoft-standard-WSL2", False, False, False),
+            ("Linux microsoft-standard-WSL2", True, True, False),
+        )
+        for proc_version, dxg_exists, kfd_exists, expected in cases:
+            with self.subTest(
+                proc_version=proc_version, dxg_exists=dxg_exists, kfd_exists=kfd_exists
+            ):
+                self.assertEqual(
+                    self.check_wsl2_gpu(proc_version, dxg_exists, kfd_exists), expected
+                )
+
+    def test_check_wsl2_gpu_handles_proc_read_error(self):
+        proc_path = Mock()
+        proc_path.read_text.side_effect = OSError
+        with patch.object(self.amdsmi_init, "Path", return_value=proc_path):
+            self.assertFalse(self.amdsmi_init.check_wsl2_gpu())
 
 
 class TestAmdSmiCli(unittest.TestCase):

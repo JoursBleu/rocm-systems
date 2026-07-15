@@ -8,6 +8,12 @@ Full documentation for amd_smi_lib is available at [https://rocm.docs.amd.com/pr
 
 ### Added
 
+- **Added AMD GPU support on WSL2 through the HIP runtime**. AMD SMI can initialize and
+  enumerate GPUs exposed through `/dev/dxg` when the native `amdgpu`/KFD interfaces are
+  unavailable. Identity, board, VRAM, UUID, BDF, and enumeration information is available where
+  the HIP runtime provides a data source. Hardware telemetry and management features without a
+  WSL2 data source continue to report `AMDSMI_STATUS_NOT_SUPPORTED`.
+
 - **Added `--folder` support to `amd-smi ras --afid`**.
   - `amd-smi ras --afid --folder <DIR>` decodes every `*.cper` in a directory and prints a `file_name | list of afids` table (or a JSON array under `--json`).
   - Records with no AFIDs show `-`; files that cannot be parsed show `decode failed`.
